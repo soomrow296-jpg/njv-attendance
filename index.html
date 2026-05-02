@@ -802,8 +802,8 @@ input[type=checkbox] {
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
     <div class="modal-title">Add Student</div>
-    <div class="input-group"><label class="input-label">First Name</label><input type="text" id="sFirst" placeholder="e.g. Ayesha"></div>
-    <div class="input-group"><label class="input-label">Last Name</label><input type="text" id="sLast" placeholder="e.g. Khan"></div>
+    <div class="input-group"><label class="input-label">First Name</label><input type="text" id="sFirst" placeholder="e.g. Faisal"></div>
+    <div class="input-group"><label class="input-label">Last Name</label><input type="text" id="sLast" placeholder="e.g. Ahmed"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div class="input-group"><label class="input-label">Roll No.</label><input type="text" id="sRoll" placeholder="01"></div>
       <div class="input-group"><label class="input-label">Class</label>
@@ -855,7 +855,7 @@ const CLASSES = [
 const ADMINS = [
   { name:'Academic Incharge',   initials:'AI', color:'#f97316' },
   { name:'Faisal Ahmed',        initials:'FA', color:'#22c55e' },
-  { name:'Wajid Ali',           initials:'WA', color:'#818cf8' },
+  { name:'Wajid Ali',           initials:'W', color:'#818cf8' },
   { name:'Sarmad Hussain',      initials:'SH', color:'#f59e0b' },
   { name:'Saeed Zardari',       initials:'SZ', color:'#f97316' },
   { name:'Ali Asghar',          initials:'AA', color:'#22c55e' },
@@ -874,15 +874,9 @@ function loadData(key) { try { return JSON.parse(localStorage.getItem(key)); } c
 function saveData(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
 
 let students = loadData(STORAGE_KEYS.students) || [
-  {id:1,name:'Ayesha Khan',  roll:'01',class:'Grade 6A'},
-  {id:2,name:'Bilal Ahmed',  roll:'02',class:'Grade 6A'},
-  {id:3,name:'Fatima Noor',  roll:'03',class:'Grade 6A'},
-  {id:4,name:'Hamza Raza',   roll:'04',class:'Grade 6A'},
-  {id:5,name:'Iqra Malik',   roll:'05',class:'Grade 6A'},
-  {id:6,name:'Junaid Ali',   roll:'06',class:'Grade 6A'},
-  {id:7,name:'Sara Qureshi', roll:'01',class:'Grade 7A'},
-  {id:8,name:'Tariq Butt',   roll:'02',class:'Grade 7A'},
-  {id:9,name:'Usman Tariq',  roll:'03',class:'Grade 7A'},
+  {id:1,name:'Wajid Ali',  roll:'01',class:'Grade 6A'},
+  {id:2,name:'Faisal Ahmed',  roll:'02',class:'Grade 6A'},
+  
 ];
 
 let records = loadData(STORAGE_KEYS.records) || [];
