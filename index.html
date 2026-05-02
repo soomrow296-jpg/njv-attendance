@@ -704,7 +704,7 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); c
 // ═══════════════════════════════════════════════════
 //  GOOGLE APPS SCRIPT CODE (shown to user)
 // ═══════════════════════════════════════════════════
-// NJV SMB Mehar — Attendance Google Sheets Sync
+const APPS_SCRIPT_CODE = `// NJV SMB Mehar — Attendance Google Sheets Sync
 const SHEET_NAME_ATTENDANCE = 'Attendance';
 const SHEET_NAME_STUDENTS = 'Students';
 const SHEET_NAME_SUMMARY = 'Summary';
@@ -855,7 +855,7 @@ function updateSummary(ss, records, students) {
   }
   sheet.autoResizeColumns(1, headers.length);
   sheet.setFrozenRows(4);
-}
+}`;
 
 // ═══════════════════════════════════════════════════
 //  STORAGE KEYS
