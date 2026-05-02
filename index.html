@@ -894,7 +894,8 @@ let adminPins    = loadLocal(SK.pins)     || {};
 let adminUsers   = loadLocal(SK.users)    || DEFAULT_ADMINS;
 let nextId       = students.length ? Math.max(...students.map(s=>s.id)) + 1 : 1;
 let lastSyncTime = loadLocal(SK.lastSync) || null;
-let gsheetUrl    = loadLocal(SK.sheetUrl) || '';
+// Hardcoded Google Sheet URL (Change this when needed)
+let gsheetUrl    = "https://script.google.com/macros/s/AKfycbxCbMznIHWdacSzd2EKdrrTgae4RWgtg4KvT58UghPzW-f9ASaIKwZC2K_qsSMF9AGqtA/exec";
 
 // Date-aware attendance — not just "today"
 let currentAttendDate = getTodayStr();
