@@ -304,8 +304,8 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); c
     </div>
     <div class="header-right">
       <div class="sync-pill" id="syncPill">
-        <div class="sync-dot" id="syncDot"></div>
-        <span id="syncLabel">—</span>
+  <div class="sync-dot" id="syncDot"></div>
+  <span id="syncLabel">Synced</span>
       </div>
       <div class="date-pill" id="headerDatePill" onclick="toggleDatePicker()">
         <span id="headerDateText">—</span>
@@ -505,25 +505,6 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); c
         </div>
         <button class="btn btn-primary btn-sm btn-block" onclick="openAddUserModal()" style="margin-bottom:8px">+ Add New User</button>
       </div>
-
-      <div class="divider"></div>
-      <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.6px">Sync Controls</div>
-
-      <div class="sync-bar" id="syncStatusBar">
-        <div class="sync-bar-icon">🔄</div>
-        <div class="sync-bar-text" id="syncStatusText">Checking sync status…</div>
-        <div class="sync-bar-time" id="syncStatusTime"></div>
-      </div>
-
-      <div style="display:flex;gap:8px;margin-bottom:8px">
-        <button class="btn btn-primary" style="flex:1" onclick="pushToCloud()">⬆ Push Cloud</button>
-        <button class="btn btn-dark" style="flex:1" onclick="pullFromCloud()">⬇ Pull Cloud</button>
-      </div>
-      <p style="font-size:11px;color:var(--text3);margin-bottom:16px">Push = upload your local data. Pull = download latest from cloud (overwrites local).</p>
-
-      <div class="divider"></div>
-      <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.6px">Danger Zone</div>
-      <button class="btn btn-danger btn-block" onclick="clearLocalData()">Clear All Local Data</button>
     </div>
 
   </div>
@@ -891,7 +872,7 @@ const CLASSES = [
 const DEFAULT_ADMINS = [
   { name:'Academic Incharge', initials:'AI', color:'#f97316', isAcademic: true },
   { name:'Faisal Ahmed',      initials:'FA', color:'#22c55e', isAcademic: false },
-  { name:'Wajid Ali',         initials:'W',  color:'#818cf8', isAcademic: false },
+  { name:'Wajid Ali',         initials:'WA',  color:'#818cf8',isAcademic:false },
   { name:'Sarmad Hussain',    initials:'SH', color:'#f59e0b', isAcademic: false },
   { name:'Saeed Zardari',     initials:'SZ', color:'#f97316', isAcademic: false },
   { name:'Ali Asghar',        initials:'AA', color:'#22c55e', isAcademic: false },
@@ -1021,27 +1002,51 @@ function updateSheetStatus() {
 }
 
 async function syncToGoogleSheet() {
-  if (!gsheetUrl) { toast('Please set Google Sheet URL in Settings first'); showPage('settings',document.getElementById('nav-settings')); return; }
+  if (!gsheetUrl) { 
+    toast('Please set Google Sheet URL in Settings first'); 
+    showPage('settings', document.getElementById('nav-settings')); 
+    return; 
+  }
+  
   showLoading('Syncing to Google Sheets…');
+  
   try {
-    const payload = { action: 'syncAll', students, records, syncedBy: adminUsers[currentAdmin]?.name || 'Unknown', timestamp: Date.now() };
+    const payload = { 
+      action: 'syncAll', 
+      students, 
+      records, 
+      syncedBy: adminUsers[currentAdmin]?.name || 'Unknown', 
+      timestamp: Date.now() 
+    };
+    
     const res = await fetch(gsheetUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(payload)
     });
+    
     const data = await res.json();
+    
     if (data.success) {
-      toast('Synced to Google Sheets ✓');
-      document.getElementById('sheetStatusDot').className = 'sheet-status-dot connected';
-      document.getElementById('sheetStatusText').textContent = 'Last synced: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+      toast('✅ Synced to Google Sheets successfully');
+      
+      // Update header pill to "Synced"
+      document.getElementById('syncDot').className = 'sync-dot synced';
+      document.getElementById('syncLabel').textContent = 'Synced';
+      document.getElementById('syncLabel').style.color = 'var(--present)';
+      
     } else {
       toast('Sheet sync failed: ' + (data.error || 'Unknown error'));
+      document.getElementById('syncDot').className = 'sync-dot error';
+      document.getElementById('syncLabel').textContent = 'Failed';
     }
   } catch(e) {
     toast('Could not reach Google Sheets — check URL');
+    document.getElementById('syncDot').className = 'sync-dot error';
+    document.getElementById('syncLabel').textContent = 'Error';
     console.error(e);
   }
+  
   hideLoading();
 }
 
@@ -1055,115 +1060,6 @@ function closeScriptModal(e) {
 function copyScript() {
   navigator.clipboard.writeText(APPS_SCRIPT_CODE).then(() => toast('Script copied to clipboard ✓')).catch(() => toast('Copy failed — select text manually'));
 }
-
-// ═══════════════════════════════════════════════════
-//  CLOUD SYNC (Artifact Storage)
-// ═══════════════════════════════════════════════════
-function setSyncStatus(state, label) {
-  const dot = document.getElementById('syncDot');
-  const lbl = document.getElementById('syncLabel');
-  dot.className = 'sync-dot ' + state;
-  lbl.textContent = label;
-}
-
-async function pushToCloud() {
-  showLoading('Pushing data to cloud…');
-  try {
-    // Gather all marks from localStorage
-    const allMarks = {};
-    for(let i=0; i<localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith(SK.marks)) {
-        const date = k.replace(SK.marks, '');
-        allMarks[date] = loadLocal(k);
-      }
-    }
-    const payload = JSON.stringify({ students, records, allMarks, users: adminUsers, timestamp: Date.now(), pushedBy: adminUsers[currentAdmin]?.name || 'Unknown' });
-    await window.storage.set(CLOUD_KEY, payload, true);
-    await window.storage.set(PINS_KEY, JSON.stringify(adminPins), true);
-    await window.storage.set(USERS_KEY, JSON.stringify(adminUsers), true);
-    lastSyncTime = new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-    saveLocal(SK.lastSync, lastSyncTime);
-    setSyncStatus('synced', lastSyncTime);
-    updateSyncBar('Synced to cloud', lastSyncTime);
-    toast('Pushed to cloud ✓');
-  } catch(e) {
-    setSyncStatus('error', 'Error');
-    toast('Sync failed — check connection');
-  }
-  hideLoading();
-}
-
-async function pullFromCloud() {
-  showLoading('Pulling latest data…');
-  try {
-    const res = await window.storage.get(CLOUD_KEY, true);
-    if (!res) { toast('No cloud data found yet'); hideLoading(); return; }
-    const data = JSON.parse(res.value);
-    students = data.students || students;
-    records  = data.records  || records;
-    if (data.allMarks) {
-      Object.entries(data.allMarks).forEach(([date, marks]) => saveMarks(date, marks));
-    }
-    if (data.users) { adminUsers = data.users; saveUsers(); }
-    nextId = students.length ? Math.max(...students.map(s=>s.id)) + 1 : 1;
-    saveStudents(); saveRecords();
-    try {
-      const pinRes = await window.storage.get(PINS_KEY, true);
-      if (pinRes) { adminPins = JSON.parse(pinRes.value); savePins(); }
-      const userRes = await window.storage.get(USERS_KEY, true);
-      if (userRes) { adminUsers = JSON.parse(userRes.value); saveUsers(); }
-    } catch(e) {}
-    todayMarks = loadMarks(currentAttendDate);
-    lastSyncTime = new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-    saveLocal(SK.lastSync, lastSyncTime);
-    setSyncStatus('synced', lastSyncTime);
-    updateSyncBar('Pulled from cloud', 'By ' + (data.pushedBy||'unknown'));
-    renderDashboard(); renderStudents(); renderClasses(); renderAdminPinList(); renderAttendance();
-    toast('Data synced from cloud ✓');
-  } catch(e) {
-    setSyncStatus('error', 'Error');
-    toast('Pull failed — no cloud storage available');
-  }
-  hideLoading();
-}
-
-async function autoSync() {
-  try {
-    const res = await window.storage.get(CLOUD_KEY, true);
-    if (!res) { setSyncStatus('', 'Not synced'); return; }
-    const data = JSON.parse(res.value);
-    if (data.records && data.records.length >= records.length) {
-      students = data.students || students;
-      records  = data.records  || records;
-      if (data.allMarks) Object.entries(data.allMarks).forEach(([date, marks]) => saveMarks(date, marks));
-      if (data.users) { adminUsers = data.users; saveUsers(); }
-      nextId = students.length ? Math.max(...students.map(s=>s.id)) + 1 : 1;
-      saveStudents(); saveRecords();
-    }
-    try {
-      const pinRes = await window.storage.get(PINS_KEY, true);
-      if (pinRes) { adminPins = JSON.parse(pinRes.value); savePins(); }
-      const userRes = await window.storage.get(USERS_KEY, true);
-      if (userRes) { adminUsers = JSON.parse(userRes.value); saveUsers(); }
-    } catch(e) {}
-    todayMarks = loadMarks(currentAttendDate);
-    const t = new Date(data.timestamp).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-    setSyncStatus('synced', t);
-    updateSyncBar('Auto-synced', 'By ' + (data.pushedBy||'cloud'));
-    renderDashboard(); renderStudents(); renderClasses(); renderAdminPinList();
-  } catch(e) {
-    setSyncStatus('', 'Local only');
-  }
-}
-
-function updateSyncBar(text, sub) {
-  const bar = document.getElementById('syncStatusBar'); if (!bar) return;
-  document.getElementById('syncStatusText').textContent = text;
-  document.getElementById('syncStatusTime').textContent = sub || '';
-  bar.querySelector('.sync-bar-icon').textContent = '✅';
-}
-
 // ═══════════════════════════════════════════════════
 //  LOADING OVERLAY
 // ═══════════════════════════════════════════════════
