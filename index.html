@@ -855,7 +855,7 @@ const CLASSES = [
 const ADMINS = [
   { name:'Academic Incharge',   initials:'AI', color:'#f97316' },
   { name:'Faisal Ahmed',        initials:'FA', color:'#22c55e' },
-  { name:'Wajid Ali',           initials:'W', color:'#818cf8' },
+  { name:'Wajid Ali',           initials:'W',  color:'#818cf8' },
   { name:'Sarmad Hussain',      initials:'SH', color:'#f59e0b' },
   { name:'Saeed Zardari',       initials:'SZ', color:'#f97316' },
   { name:'Ali Asghar',          initials:'AA', color:'#22c55e' },
@@ -888,17 +888,10 @@ let attendDirty = false;
 
 const todayStr = new Date().toISOString().slice(0,10);
 
-// Seed past records if empty
-if (!records.length) {
-  const statuses = ['present','present','present','absent','late','leave'];
-  for (let d = 7; d >= 1; d--) {
-    const dt = new Date(); dt.setDate(dt.getDate() - d);
-    const dateStr = dt.toISOString().slice(0,10);
-    students.forEach(s => {
-      records.push({ date:dateStr, studentId:s.id, status:statuses[Math.floor(Math.random()*statuses.length)], admin:ADMINS[0].name });
-    });
-  }
-  saveData(STORAGE_KEYS.records, records);
+// Only seed once ever (never again after first use)
+if (!records.length && !localStorage.getItem('att_seeded')) {
+  // ... seeding code ...
+  localStorage.setItem('att_seeded', 'true');
 }
 
 // Persist helpers
