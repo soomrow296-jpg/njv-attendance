@@ -890,7 +890,17 @@ function initials(name) { return name.split(' ').map(x=>x[0]).join('').toUpperCa
 let students     = loadLocal(SK.students) || [];  // NO default seed data
 let records      = loadLocal(SK.records)  || [];
 let currentAdmin = parseInt(loadLocal(SK.admin)) || 0;
-let adminPins    = loadLocal(SK.pins)     || {};
+// Predefined PINs (You can change these)
+let adminPins = {
+  0: "1234",   // Academic Incharge
+  1: "5678",   // Faisal Ahmed
+  2: "4321",   // Wajid Ali
+  3: "1111",   // Sarmad Hussain
+  4: "2222",   // Saeed Zardari
+  5: "3333",   // Ali Asghar
+  6: "4444",   // Ali Khoso
+  7: "5555"    // Rashid Bhand
+};
 let adminUsers   = loadLocal(SK.users)    || DEFAULT_ADMINS;
 let nextId       = students.length ? Math.max(...students.map(s=>s.id)) + 1 : 1;
 let lastSyncTime = loadLocal(SK.lastSync) || null;
@@ -1157,13 +1167,26 @@ function closeAdminModal(e) {
   if (!e || e.target===document.getElementById('adminModal')) document.getElementById('adminModal').classList.remove('open');
 }
 function handleAdminSelect(idx) {
-  if (idx === currentAdmin) { document.getElementById('adminModal').classList.remove('open'); return; }
+  if (idx === currentAdmin) {
+    document.getElementById('adminModal').classList.remove('open');
+    return;
+  }
+
+  const isIncharge = isAcademicIncharge();
+
+  // If user is Academic Incharge → allow switching to anyone using his own PIN
+  if (isIncharge) {
+    document.getElementById('adminModal').classList.remove('open');
+    completeAdminSwitch(idx);   // Direct switch without asking PIN
+    return;
+  }
+
+  // Normal users must enter their own PIN
   if (adminPins[idx]) {
     document.getElementById('adminModal').classList.remove('open');
     openPinModal(idx);
   } else {
-    document.getElementById('adminModal').classList.remove('open');
-    completeAdminSwitch(idx);
+    toast("No PIN set for this user");
   }
 }
 function completeAdminSwitch(idx) {
