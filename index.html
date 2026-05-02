@@ -471,7 +471,7 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); c
         </div>
         <div class="input-group" style="margin-bottom:8px">
           <label class="input-label">Apps Script Web App URL</label>
-          <input type="text" id="gsheetUrl" placeholder="https://script.google.com/macros/s/AKfycbxRdRjZZXsOH_DIq-XGX0-E4goEc95sSlHWleLwuBTSf9mPv6qurrmmYPRtymVGp6sHfA/exec" oninput="saveSheetUrl()">
+          <input type="text" id="gsheetUrl" placeholder="https://script.google.com/macros/s/AKfycbw6aHFYn6pRLKPs79BPmunBkWshD2zDbYmfxC95fwlwhJfoUgAo9KoVe04Le5dMCLT3Yg/exec" oninput="saveSheetUrl()">
         </div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5">
           📋 <strong style="color:var(--text2)">Setup:</strong> Open your Google Sheet → Extensions → Apps Script → paste the script below → Deploy as Web App → copy URL above.
@@ -708,7 +708,7 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); c
 // ═══════════════════════════════════════════════════
 //  GOOGLE APPS SCRIPT CODE (shown to user)
 // ═══════════════════════════════════════════════════
-const APPS_SCRIPT_CODE = `// NJV SMB Mehar — Attendance Google Sheets Sync (Fixed - Multi User)
+const APPS_SCRIPT_CODE = `// NJV SMB Mehar — Multi User Attendance Sync
 const SHEET_NAME_ATTENDANCE = 'Attendance';
 const SHEET_NAME_STUDENTS = 'Students';
 const SHEET_NAME_SUMMARY = 'Summary';
@@ -719,15 +719,24 @@ function corsOutput(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-function doOptions(e) { return corsOutput({ status: 'ok' }); }
-function doGet(e) { 
-  return corsOutput({ status: 'NJV SMB Attendance Sync Active', timestamp: new Date().toISOString() }); 
+// Must exist - even if simple
+function doGet(e) {
+  return corsOutput({ 
+    status: 'NJV SMB Attendance Sync Active', 
+    timestamp: new Date().toISOString() 
+  });
+}
+
+function doOptions(e) {
+  return corsOutput({ status: 'ok' });
 }
 
 function doPost(e) {
   try {
     let raw = '{}';
-    if (e && e.postData && e.postData.contents) raw = e.postData.contents;
+    if (e && e.postData && e.postData.contents) {
+      raw = e.postData.contents;
+    }
     
     const data = JSON.parse(raw);
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -735,11 +744,10 @@ function doPost(e) {
     if (data.action === 'syncAll') {
       syncStudents(ss, data.students || []);
       appendAttendance(ss, data.records || [], data.students || []);
-      updateSummary(ss);
       
       return corsOutput({ 
         success: true, 
-        message: 'Data merged successfully', 
+        message: 'Data appended successfully',
         timestamp: new Date().toISOString() 
       });
     } 
@@ -752,7 +760,7 @@ function doPost(e) {
   }
 }
 
-// Students - Still replace (master list)
+// Students - Master List
 function syncStudents(ss, students) {
   let sheet = ss.getSheetByName(SHEET_NAME_STUDENTS);
   if (!sheet) sheet = ss.insertSheet(SHEET_NAME_STUDENTS);
@@ -769,50 +777,37 @@ function syncStudents(ss, students) {
   sheet.autoResizeColumns(1, headers.length);
 }
 
-// FIXED: Append new records instead of clearing
+// Append Attendance (Main Fix)
 function appendAttendance(ss, records, students) {
   let sheet = ss.getSheetByName(SHEET_NAME_ATTENDANCE);
   if (!sheet) sheet = ss.insertSheet(SHEET_NAME_ATTENDANCE);
-  
-  // Create headers if sheet is empty
+
   if (sheet.getLastRow() === 0) {
     const headers = ['Date', 'Student Name', 'Roll No.', 'Class', 'Status', 'Marked By', 'Sync Time', 'Synced By'];
     sheet.getRange(1, 1, 1, headers.length).setValues([headers])
       .setBackground('#0f9d58').setFontColor('#ffffff').setFontWeight('bold');
   }
-  
+
   if (records && records.length > 0) {
     const studentMap = {};
-    students.forEach(s => { studentMap[s.id] = s; });
-    
+    students.forEach(s => { if(s && s.id) studentMap[s.id] = s; });
+
     const newRows = records.map(r => {
       const s = studentMap[r.studentId] || {};
       return [
-        r.date,
+        r.date || '',
         s.name || 'Unknown',
         s.roll || '',
         s.class || '',
-        r.status.toUpperCase(),
+        (r.status || '').toUpperCase(),
         r.admin || '',
         new Date().toLocaleString(),
         r.syncedBy || 'Unknown'
       ];
     });
-    
-    // Append instead of replace
-    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, newRows[0].length).setValues(newRows);
-    
-    // Optional: Sort by Date (newest first)
-    // sheet.sort(1, false);
-  }
-  
-  sheet.autoResizeColumns(1, 8);
-}
 
-// Update Summary (can be called after append)
-function updateSummary(ss) {
-  // You can improve this later if needed
-  // For now, keeping simple
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, 8).setValues(newRows);
+  }
 }`;
 
 // ═══════════════════════════════════════════════════
@@ -882,7 +877,7 @@ let adminUsers   = loadLocal(SK.users)    || DEFAULT_ADMINS;
 let nextId       = students.length ? Math.max(...students.map(s=>s.id)) + 1 : 1;
 let lastSyncTime = loadLocal(SK.lastSync) || null;
 // Hardcoded Google Sheet URL (Change this when needed)
-let gsheetUrl    = "https://script.google.com/macros/s/AKfycbxRdRjZZXsOH_DIq-XGX0-E4goEc95sSlHWleLwuBTSf9mPv6qurrmmYPRtymVGp6sHfA/exec";
+let gsheetUrl    = "https://script.google.com/macros/s/AKfycbw6aHFYn6pRLKPs79BPmunBkWshD2zDbYmfxC95fwlwhJfoUgAo9KoVe04Le5dMCLT3Yg/exec";
 
 // Date-aware attendance — not just "today"
 let currentAttendDate = getTodayStr();
