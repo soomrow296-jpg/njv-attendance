@@ -709,7 +709,7 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); c
 //  GOOGLE APPS SCRIPT CODE (shown to user)
 // ═══════════════════════════════════════════════════
 const APPS_SCRIPT_CODE = `// =====================================================
-// NJV SMB Mehar — Attendance System (FINAL FIXED VERSION)
+// NJV SMB Mehar — FINAL FIXED CODE (Duplicate + Summary Fixed)
 // =====================================================
 
 const SHEET_NAME_ATTENDANCE = 'Attendance';
@@ -717,16 +717,12 @@ const SHEET_NAME_STUDENTS   = 'Students';
 const SHEET_NAME_SUMMARY    = 'Summary';
 
 function corsOutput(obj) {
-  return ContentService
-    .createTextOutput(JSON.stringify(obj))
+  return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
 function doGet(e) {
-  return corsOutput({ 
-    status: 'NJV SMB Attendance Sync Active', 
-    timestamp: new Date().toISOString() 
-  });
+  return corsOutput({ status: 'NJV SMB Attendance Sync Active', timestamp: new Date().toISOString() });
 }
 
 function doOptions(e) {
@@ -736,167 +732,147 @@ function doOptions(e) {
 function doPost(e) {
   try {
     let raw = '{}';
-    if (e && e.postData && e.postData.contents) {
-      raw = e.postData.contents;
-    }
+    if (e && e.postData && e.postData.contents) raw = e.postData.contents;
     
     const data = JSON.parse(raw);
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
     if (data.action === 'syncAll') {
       syncStudents(ss, data.students || []);
-      appendAttendance(ss, data.records || [], data.students || []);
+      upsertAttendance(ss, data.records || [], data.students || []);
       updateSummary(ss);
 
-      return corsOutput({ 
-        success: true, 
-        message: 'Data synced successfully',
-        timestamp: new Date().toISOString() 
-      });
-    } 
-
+      return corsOutput({ success: true, message: 'Synced successfully' });
+    }
     return corsOutput({ success: false, error: 'Unknown action' });
 
   } catch(err) {
-    console.error('Error:', err);
+    console.error(err);
     return corsOutput({ success: false, error: err.message });
   }
 }
 
+// Students
 function syncStudents(ss, students) {
   let sheet = ss.getSheetByName(SHEET_NAME_STUDENTS);
   if (!sheet) sheet = ss.insertSheet(SHEET_NAME_STUDENTS);
-  
   sheet.clearContents();
-  
+
   const headers = ['ID', 'Full Name', 'Roll No.', 'Class', 'Date Added'];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers])
     .setBackground('#1a73e8').setFontColor('#ffffff').setFontWeight('bold');
-  
-  if (students && students.length > 0) {
-    const rows = students.map(s => [
-      s.id, 
-      s.name || '', 
-      s.roll || '', 
-      s.class || '', 
-      s.addedDate || ''
-    ]);
+
+  if (students.length > 0) {
+    const rows = students.map(s => [s.id, s.name || '', s.roll || '', s.class || '', s.addedDate || '']);
     sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
   }
-  
   sheet.autoResizeColumns(1, headers.length);
 }
 
-function appendAttendance(ss, records, students) {
+// ====================== ATTENDANCE - STRONG DUPLICATE FIX ======================
+function upsertAttendance(ss, records, students) {
   let sheet = ss.getSheetByName(SHEET_NAME_ATTENDANCE);
   if (!sheet) sheet = ss.insertSheet(SHEET_NAME_ATTENDANCE);
 
   if (sheet.getLastRow() === 0) {
-    const headers = ['Date', 'Student Name', 'Roll No.', 'Class', 'Status', 
-                    'Marked By', 'Sync Time', 'Synced By'];
+    const headers = ['Date', 'Student Name', 'Roll No.', 'Class', 'Status', 'Marked By', 'Sync Time', 'Synced By'];
     sheet.getRange(1, 1, 1, headers.length).setValues([headers])
       .setBackground('#0f9d58').setFontColor('#ffffff').setFontWeight('bold');
   }
 
-  if (records && records.length > 0) {
-    const studentMap = {};
-    students.forEach(s => {
-      if (s && s.id) studentMap[s.id] = s;
-    });
+  const studentMap = {};
+  students.forEach(s => { if(s && s.id) studentMap[s.id] = s; });
 
-    const newRows = records.map(r => {
-      const s = studentMap[r.studentId] || {};
-      return [
-        r.date || '',
-        s.name || 'Unknown',
-        s.roll || '',
-        s.class || '',
-        (r.status || '').toUpperCase(),
-        r.admin || '',
-        new Date().toLocaleString(),
-        r.syncedBy || 'Unknown'
-      ];
-    });
+  const statusColors = {
+    'PRESENT': '#c6efce',
+    'ABSENT':  '#ffc7ce',
+    'LATE':    '#c0e4ff',
+    'LEAVE':   '#fff2cc'
+  };
 
-    const startRow = sheet.getLastRow() + 1;
-    sheet.getRange(startRow, 1, newRows.length, 8).setValues(newRows);
+  records.forEach(r => {
+    const s = studentMap[r.studentId] || {};
+    const studentName = (s.name || 'Unknown').toString().trim();
+    const statusUpper = (r.status || '').toUpperCase();
 
-    const statusColors = {
-      'PRESENT': '#c6efce',
-      'ABSENT':  '#ffc7ce',
-      'LATE':    '#c0e4ff',
-      'LEAVE':   '#fff2cc'
-    };
+    const newRow = [
+      r.date, studentName, s.roll || '', s.class || '', 
+      statusUpper, r.admin || '', new Date().toLocaleString(), r.syncedBy || 'Unknown'
+    ];
 
-    newRows.forEach((row, index) => {
-      const status = row[4];
-      const color = statusColors[status] || '#ffffff';
-      sheet.getRange(startRow + index, 5).setBackground(color).setFontWeight('bold');
-    });
-  }
+    const allData = sheet.getDataRange().getValues();
+    let updated = false;
+
+    // Strong check: Date + Exact Student Name
+    for (let i = 1; i < allData.length; i++) {
+      if (allData[i][0] === r.date && String(allData[i][1]).trim() === studentName) {
+        sheet.getRange(i + 1, 1, 1, 8).setValues([newRow]);
+        sheet.getRange(i + 1, 5).setBackground(statusColors[statusUpper] || '#ffffff').setFontWeight('bold');
+        updated = true;
+        break;
+      }
+    }
+
+    if (!updated) {
+      const newRowNum = sheet.getLastRow() + 1;
+      sheet.getRange(newRowNum, 1, 1, 8).setValues([newRow]);
+      sheet.getRange(newRowNum, 5).setBackground(statusColors[statusUpper] || '#ffffff').setFontWeight('bold');
+    }
+  });
 
   sheet.autoResizeColumns(1, 8);
 }
 
+// ====================== SUMMARY - Correct Percentage ======================
 function updateSummary(ss) {
   let sheet = ss.getSheetByName(SHEET_NAME_SUMMARY);
   if (!sheet) sheet = ss.insertSheet(SHEET_NAME_SUMMARY);
-  
   sheet.clearContents();
 
   sheet.getRange(1, 1).setValue('NJV SMB Mehar — Attendance Summary')
     .setFontSize(14).setFontWeight('bold').setFontColor('#1a73e8');
-  
   sheet.getRange(2, 1).setValue('Last updated: ' + new Date().toLocaleString())
     .setFontColor('#666666');
 
   const attSheet = ss.getSheetByName(SHEET_NAME_ATTENDANCE);
-  if (!attSheet || attSheet.getLastRow() <= 1) {
-    sheet.getRange(4, 1).setValue('No attendance records found yet.');
-    return;
-  }
+  if (!attSheet || attSheet.getLastRow() <= 1) return;
 
-  const data = attSheet.getDataRange().getValues();
-  const records = data.slice(1);
-
-  const studentStats = {};
+  const records = attSheet.getDataRange().getValues().slice(1);
+  const stats = {};
 
   records.forEach(row => {
-    const name   = (row[1] || '').toString().trim();
-    const roll   = (row[2] || '').toString().trim();
-    const cls    = (row[3] || '').toString().trim();
-    const status = (row[4] || '').toString().toLowerCase();
-
+    const name = String(row[1] || '').trim();
+    const status = String(row[4] || '').toLowerCase();
     if (!name) return;
 
-    const key = name + '|' + roll + '|' + cls;   // <-- Changed to avoid backticks
+    const key = name;
 
-    if (!studentStats[key]) {
-      studentStats[key] = { name, roll, class: cls, total:0, present:0, absent:0, late:0, leave:0 };
+    if (!stats[key]) {
+      stats[key] = { name, total:0, present:0, absent:0, late:0, leave:0 };
     }
 
-    studentStats[key].total++;
-    if (status === 'present') studentStats[key].present++;
-    else if (status === 'absent') studentStats[key].absent++;
-    else if (status === 'late') studentStats[key].late++;
-    else if (status === 'leave') studentStats[key].leave++;
+    stats[key].total++;
+    if (status === 'present') stats[key].present++;
+    else if (status === 'absent') stats[key].absent++;
+    else if (status === 'late') stats[key].late++;
+    else if (status === 'leave') stats[key].leave++;
   });
 
-  const headers = ['Student Name', 'Roll No.', 'Class', 'Total Days', 'Present', 
-                  'Absent', 'Late', 'Leave', 'Attendance %'];
+  const headers = ['Student Name','Total Days','Present','P %','Absent','A %','Late','L %','Leave','Lv %'];
   
   sheet.getRange(4, 1, 1, headers.length).setValues([headers])
     .setBackground('#4285f4').setFontColor('#ffffff').setFontWeight('bold');
 
-  const rows = Object.values(studentStats).map(s => {
-    const pct = s.total > 0 ? Math.round((s.present / s.total) * 100) : 0;
-    return [s.name, s.roll, s.class, s.total, s.present, s.absent, s.late, s.leave, pct + '%'];
+  const rows = Object.values(stats).map(s => {
+    const pPct = s.total ? Math.round((s.present / s.total) * 100) : 0;
+    const aPct = s.total ? Math.round((s.absent / s.total) * 100) : 0;
+    const lPct = s.total ? Math.round((s.late / s.total) * 100) : 0;
+    const lvPct = s.total ? Math.round((s.leave / s.total) * 100) : 0;
+
+    return [s.name, s.total, s.present, pPct + '%', s.absent, aPct + '%', s.late, lPct + '%', s.leave, lvPct + '%'];
   });
 
-  rows.sort((a, b) => {
-    if (a[2] !== b[2]) return a[2].localeCompare(b[2]);
-    return a[0].localeCompare(b[0]);
-  });
+  rows.sort((a, b) => a[0].localeCompare(b[0]));
 
   if (rows.length > 0) {
     sheet.getRange(5, 1, rows.length, headers.length).setValues(rows);
