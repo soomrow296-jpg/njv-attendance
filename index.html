@@ -471,7 +471,7 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); c
         </div>
         <div class="input-group" style="margin-bottom:8px">
           <label class="input-label">Apps Script Web App URL</label>
-          <input type="text" id="gsheetUrl" placeholder="https://script.google.com/macros/s/AKfycbzDGaccHyE_FztQgJQ-4JedXsISkHvg1Oo1dBm653eSBG0JR9ksBN6rp6rdS7xnUpukFA/exec" oninput="saveSheetUrl()">
+          <input type="text" id="gsheetUrl" placeholder="https://script.google.com/macros/s/AKfycbxRihmLMltZr_eh0bE5m3yN5K58wglAjwhudrGKKp98BiJ8tuDYjNSVxKlO6MhKMzB7NA/exec" oninput="saveSheetUrl()">
         </div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5">
           📋 <strong style="color:var(--text2)">Setup:</strong> Open your Google Sheet → Extensions → Apps Script → paste the script below → Deploy as Web App → copy URL above.
@@ -708,10 +708,13 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); c
 // ═══════════════════════════════════════════════════
 //  GOOGLE APPS SCRIPT CODE (shown to user)
 // ═══════════════════════════════════════════════════
-const APPS_SCRIPT_CODE = `// NJV SMB Mehar — Multi User Attendance Sync
+const APPS_SCRIPT_CODE = `// =====================================================
+// NJV SMB Mehar — Attendance System (FINAL FIXED VERSION)
+// =====================================================
+
 const SHEET_NAME_ATTENDANCE = 'Attendance';
-const SHEET_NAME_STUDENTS = 'Students';
-const SHEET_NAME_SUMMARY = 'Summary';
+const SHEET_NAME_STUDENTS   = 'Students';
+const SHEET_NAME_SUMMARY    = 'Summary';
 
 function corsOutput(obj) {
   return ContentService
@@ -736,16 +739,13 @@ function doPost(e) {
     if (e && e.postData && e.postData.contents) {
       raw = e.postData.contents;
     }
-
+    
     const data = JSON.parse(raw);
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
     if (data.action === 'syncAll') {
       syncStudents(ss, data.students || []);
       appendAttendance(ss, data.records || [], data.students || []);
-
-      // Force all writes to complete before rebuilding summary
-      SpreadsheetApp.flush();
       updateSummary(ss);
 
       return corsOutput({ 
@@ -753,367 +753,157 @@ function doPost(e) {
         message: 'Data synced successfully',
         timestamp: new Date().toISOString() 
       });
-    }
+    } 
 
     return corsOutput({ success: false, error: 'Unknown action' });
+
   } catch(err) {
-    console.error(err);
+    console.error('Error:', err);
     return corsOutput({ success: false, error: err.message });
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// STUDENTS SHEET — Merge only, never wipe
-// ═══════════════════════════════════════════════════════════════════
 function syncStudents(ss, students) {
   let sheet = ss.getSheetByName(SHEET_NAME_STUDENTS);
   if (!sheet) sheet = ss.insertSheet(SHEET_NAME_STUDENTS);
-
+  
+  sheet.clearContents();
+  
   const headers = ['ID', 'Full Name', 'Roll No.', 'Class', 'Date Added'];
-
-  // Write headers only if sheet is brand new
-  if (sheet.getLastRow() === 0) {
-    sheet.getRange(1, 1, 1, headers.length)
-      .setValues([headers])
-      .setBackground('#1a73e8')
-      .setFontColor('#ffffff')
-      .setFontWeight('bold')
-      .setFontSize(11)
-      .setHorizontalAlignment('center');
-    sheet.setRowHeight(1, 35);
-  }
-
-  // Load existing student IDs to avoid duplicates
-  const existingIds = new Set();
-  const lastRow = sheet.getLastRow();
-  if (lastRow > 1) {
-    const existingData = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-    existingData.forEach(row => {
-      if (row[0]) existingIds.add(row[0].toString().trim());
-    });
-  }
-
-  // Only append students not already in sheet
-  const newStudents = students.filter(s => s && s.id && !existingIds.has(s.id.toString().trim()));
-
-  if (newStudents.length > 0) {
-    const rows = newStudents.map(s => [
-      s.id        || '',
-      s.name      || '',
-      s.roll      || '',
-      s.class     || '',
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers])
+    .setBackground('#1a73e8').setFontColor('#ffffff').setFontWeight('bold');
+  
+  if (students && students.length > 0) {
+    const rows = students.map(s => [
+      s.id, 
+      s.name || '', 
+      s.roll || '', 
+      s.class || '', 
       s.addedDate || ''
     ]);
-    const startRow = sheet.getLastRow() + 1;
-    sheet.getRange(startRow, 1, rows.length, headers.length).setValues(rows);
-
-    // Style new rows
-    for (let i = 0; i < rows.length; i++) {
-      sheet.getRange(startRow + i, 1, 1, headers.length)
-        .setBackground(i % 2 === 0 ? '#ffffff' : '#e8f0fe')
-        .setFontSize(10)
-        .setHorizontalAlignment('center');
-    }
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
   }
-
+  
   sheet.autoResizeColumns(1, headers.length);
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// ATTENDANCE SHEET — Always append, never overwrite, no duplicates
-// ═══════════════════════════════════════════════════════════════════
 function appendAttendance(ss, records, students) {
   let sheet = ss.getSheetByName(SHEET_NAME_ATTENDANCE);
   if (!sheet) sheet = ss.insertSheet(SHEET_NAME_ATTENDANCE);
 
-  // Write headers only if sheet is brand new
   if (sheet.getLastRow() === 0) {
-    const headers = ['Date', 'Student Name', 'Roll No.', 'Class', 'Status', 'Marked By', 'Sync Time', 'Synced By'];
-    sheet.getRange(1, 1, 1, headers.length)
-      .setValues([headers])
-      .setBackground('#0f9d58')
-      .setFontColor('#ffffff')
-      .setFontWeight('bold')
-      .setFontSize(11)
-      .setHorizontalAlignment('center');
-    sheet.setRowHeight(1, 35);
+    const headers = ['Date', 'Student Name', 'Roll No.', 'Class', 'Status', 
+                    'Marked By', 'Sync Time', 'Synced By'];
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers])
+      .setBackground('#0f9d58').setFontColor('#ffffff').setFontWeight('bold');
   }
 
-  if (!records || records.length === 0) return;
-
-  // Build set of existing keys (roll + name + date) to prevent duplicates
-  const existingKeys = new Set();
-  if (sheet.getLastRow() > 1) {
-    const existing = sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).getValues();
-    existing.forEach(row => {
-      let dateStr = '';
-      if (row[0] instanceof Date) {
-        dateStr = Utilities.formatDate(row[0], Session.getScriptTimeZone(), 'yyyy-MM-dd');
-      } else {
-        dateStr = row[0] ? row[0].toString().substring(0, 10) : '';
-      }
-      const roll = (row[2] || '').toString().trim();
-      const name = (row[1] || '').toString().trim().toLowerCase();
-      if (roll && dateStr) existingKeys.add(roll + '|' + name + '|' + dateStr);
+  if (records && records.length > 0) {
+    const studentMap = {};
+    students.forEach(s => {
+      if (s && s.id) studentMap[s.id] = s;
     });
-  }
 
-  // Build student lookup map
-  const studentMap = {};
-  students.forEach(s => { if (s && s.id) studentMap[s.id] = s; });
+    const newRows = records.map(r => {
+      const s = studentMap[r.studentId] || {};
+      return [
+        r.date || '',
+        s.name || 'Unknown',
+        s.roll || '',
+        s.class || '',
+        (r.status || '').toUpperCase(),
+        r.admin || '',
+        new Date().toLocaleString(),
+        r.syncedBy || 'Unknown'
+      ];
+    });
 
-  // Filter out duplicates and build new rows
-  const newRows = [];
-  records.forEach(r => {
-    const s = studentMap[r.studentId] || {};
-    const dateStr = r.date ? r.date.toString().substring(0, 10) : '';
-    const roll    = (s.roll  || '').toString().trim();
-    const name    = (s.name  || '').toString().trim().toLowerCase();
-    const key     = roll + '|' + name + '|' + dateStr;
-
-    if (existingKeys.has(key)) return; // skip duplicate
-    existingKeys.add(key);
-
-    newRows.push([
-      r.date                     || '',
-      s.name                     || 'Unknown',
-      s.roll                     || '',
-      s.class                    || '',
-      (r.status || '').toUpperCase(),
-      r.admin                    || '',
-      Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy hh:mm:ss a'),
-      r.syncedBy                 || 'Unknown'
-    ]);
-  });
-
-  if (newRows.length > 0) {
     const startRow = sheet.getLastRow() + 1;
     sheet.getRange(startRow, 1, newRows.length, 8).setValues(newRows);
 
-    // Style new rows
-    for (let i = 0; i < newRows.length; i++) {
-      const status = newRows[i][4];
-      let statusColor = '#ffffff';
-      if (status === 'PRESENT')      statusColor = '#e6f4ea';
-      else if (status === 'ABSENT')  statusColor = '#fce8e6';
-      else if (status === 'LATE')    statusColor = '#fef7e0';
-      else if (status === 'LEAVE')   statusColor = '#e8f0fe';
+    const statusColors = {
+      'PRESENT': '#c6efce',
+      'ABSENT':  '#ffc7ce',
+      'LATE':    '#c0e4ff',
+      'LEAVE':   '#fff2cc'
+    };
 
-      sheet.getRange(startRow + i, 1, 1, 8)
-        .setBackground(statusColor)
-        .setFontSize(10)
-        .setHorizontalAlignment('center');
-    }
+    newRows.forEach((row, index) => {
+      const status = row[4];
+      const color = statusColors[status] || '#ffffff';
+      sheet.getRange(startRow + index, 5).setBackground(color).setFontWeight('bold');
+    });
   }
+
+  sheet.autoResizeColumns(1, 8);
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// SUMMARY SHEET — Full dashboard rebuilt from complete Attendance data
-// ═══════════════════════════════════════════════════════════════════
 function updateSummary(ss) {
   let sheet = ss.getSheetByName(SHEET_NAME_SUMMARY);
   if (!sheet) sheet = ss.insertSheet(SHEET_NAME_SUMMARY);
+  
+  sheet.clearContents();
+
+  sheet.getRange(1, 1).setValue('NJV SMB Mehar — Attendance Summary')
+    .setFontSize(14).setFontWeight('bold').setFontColor('#1a73e8');
+  
+  sheet.getRange(2, 1).setValue('Last updated: ' + new Date().toLocaleString())
+    .setFontColor('#666666');
 
   const attSheet = ss.getSheetByName(SHEET_NAME_ATTENDANCE);
-  if (!attSheet || attSheet.getLastRow() <= 1) return;
-
-  // ── Read ALL attendance rows from sheet ─────────────────────────
-  const attData = attSheet.getRange(2, 1, attSheet.getLastRow() - 1, 8).getValues();
-
-  // ── Deduplicate records using roll + name + date ────────────────
-  const seenKeys = new Set();
-  const cleanData = [];
-
-  attData.forEach(row => {
-    let dateStr = '';
-    if (row[0] instanceof Date) {
-      dateStr = Utilities.formatDate(row[0], Session.getScriptTimeZone(), 'yyyy-MM-dd');
-    } else {
-      dateStr = row[0] ? row[0].toString().substring(0, 10) : '';
-    }
-
-    const roll   = (row[2] || '').toString().trim();
-    const name   = (row[1] || '').toString().trim();
-    const cls    = (row[3] || '').toString().trim();
-    const status = (row[4] || '').toString().toUpperCase().trim();
-
-    if (!roll || !dateStr || !name) return;
-
-    // roll + name + date = truly unique record
-    const key = roll + '|' + name.toLowerCase() + '|' + dateStr;
-
-    if (!seenKeys.has(key)) {
-      seenKeys.add(key);
-      cleanData.push({ dateStr, roll, name, cls, status });
-    }
-  });
-
-  // ── Count unique dates for Total Days ───────────────────────────
-  const uniqueDates = new Set();
-  cleanData.forEach(r => { if (r.dateStr) uniqueDates.add(r.dateStr); });
-  const totalDays = uniqueDates.size;
-
-  // ── Group stats per student (roll + name as key) ────────────────
-  const statsMap = {};
-  cleanData.forEach(r => {
-    const key = r.roll + '|' + r.name.toLowerCase();
-
-    if (!statsMap[key]) {
-      statsMap[key] = {
-        name: r.name,
-        roll: r.roll,
-        cls:  r.cls,
-        present: 0,
-        absent:  0,
-        late:    0,
-        leave:   0
-      };
-    }
-
-    if (r.status === 'PRESENT')     statsMap[key].present++;
-    else if (r.status === 'ABSENT') statsMap[key].absent++;
-    else if (r.status === 'LATE')   statsMap[key].late++;
-    else if (r.status === 'LEAVE')  statsMap[key].leave++;
-  });
-
-  // ── Now safe to clear and rewrite Summary ───────────────────────
-  sheet.clearContents();
-  sheet.clearFormats();
-
-  // Row 1: Title Banner
-  sheet.getRange(1, 1, 1, 9).merge()
-    .setValue('📋  NJV SMB MEHAR — ATTENDANCE SUMMARY DASHBOARD')
-    .setBackground('#1a73e8')
-    .setFontColor('#ffffff')
-    .setFontWeight('bold')
-    .setFontSize(16)
-    .setHorizontalAlignment('center')
-    .setVerticalAlignment('middle');
-  sheet.setRowHeight(1, 55);
-
-  // Row 2: Last Updated
-  sheet.getRange(2, 1, 1, 9).merge()
-    .setValue('🕐  Last Updated:  ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy  hh:mm:ss a'))
-    .setBackground('#e8f0fe')
-    .setFontColor('#3c4043')
-    .setFontStyle('italic')
-    .setFontSize(11)
-    .setHorizontalAlignment('center')
-    .setVerticalAlignment('middle');
-  sheet.setRowHeight(2, 35);
-
-  // Row 3: Stats bar — total students, total days
-  const totalStudents = Object.keys(statsMap).length;
-  sheet.getRange(3, 1, 1, 9).merge()
-    .setValue('👥  Total Students: ' + totalStudents + '     |     📅  Total School Days: ' + totalDays)
-    .setBackground('#0f9d58')
-    .setFontColor('#ffffff')
-    .setFontWeight('bold')
-    .setFontSize(11)
-    .setHorizontalAlignment('center')
-    .setVerticalAlignment('middle');
-  sheet.setRowHeight(3, 32);
-
-  // Row 4: Spacer
-  sheet.getRange(4, 1, 1, 9).setBackground('#f8f9fa');
-  sheet.setRowHeight(4, 8);
-
-  // Row 5: Column Headers
-  const headers = [
-    'Student Name', 'Roll No.', 'Class',
-    'Total Days', 'Present', 'Absent',
-    'Late', 'Leave', 'Attendance %'
-  ];
-  sheet.getRange(5, 1, 1, headers.length)
-    .setValues([headers])
-    .setBackground('#37474f')
-    .setFontColor('#ffffff')
-    .setFontWeight('bold')
-    .setFontSize(11)
-    .setHorizontalAlignment('center')
-    .setVerticalAlignment('middle');
-  sheet.setRowHeight(5, 38);
-
-  // ── No data fallback ────────────────────────────────────────────
-  if (Object.keys(statsMap).length === 0) {
-    sheet.getRange(6, 1, 1, 9).merge()
-      .setValue('No attendance data found.')
-      .setHorizontalAlignment('center')
-      .setFontStyle('italic')
-      .setFontColor('#999999')
-      .setFontSize(11);
+  if (!attSheet || attSheet.getLastRow() <= 1) {
+    sheet.getRange(4, 1).setValue('No attendance records found yet.');
     return;
   }
 
-  // ── Build and write student rows ────────────────────────────────
-  const summaryRows = Object.keys(statsMap)
-    .sort((a, b) => {
-      // Sort by roll number numerically
-      const rollA = parseInt(statsMap[a].roll) || 0;
-      const rollB = parseInt(statsMap[b].roll) || 0;
-      return rollA - rollB;
-    })
-    .map(key => {
-      const s = statsMap[key];
-      const attended   = s.present + s.late;
-      const percentage = totalDays > 0
-        ? (attended / totalDays * 100).toFixed(1) + '%'
-        : '0%';
-      return [s.name, s.roll, s.cls, totalDays, s.present, s.absent, s.late, s.leave, percentage];
-    });
+  const data = attSheet.getDataRange().getValues();
+  const records = data.slice(1);
 
-  // Write all rows at once
-  sheet.getRange(6, 1, summaryRows.length, 9).setValues(summaryRows);
+  const studentStats = {};
 
-  // Style each row
-  summaryRows.forEach((row, i) => {
-    const rowNum = 6 + i;
-    const bgColor = i % 2 === 0 ? '#ffffff' : '#f1f8e9';
+  records.forEach(row => {
+    const name   = (row[1] || '').toString().trim();
+    const roll   = (row[2] || '').toString().trim();
+    const cls    = (row[3] || '').toString().trim();
+    const status = (row[4] || '').toString().toLowerCase();
 
-    sheet.getRange(rowNum, 1, 1, 9)
-      .setBackground(bgColor)
-      .setFontSize(10)
-      .setHorizontalAlignment('center')
-      .setVerticalAlignment('middle');
-    sheet.setRowHeight(rowNum, 28);
+    if (!name) return;
 
-    // Color-code Attendance % column
-    const pct = parseFloat(row[8]);
-    let pctColor  = '#e53935'; // red   — below 60%
-    let pctBg     = '#fce8e6';
-    if (pct >= 90) {
-      pctColor = '#1e8e3e'; pctBg = '#e6f4ea'; // dark green
-    } else if (pct >= 75) {
-      pctColor = '#0f9d58'; pctBg = '#e6f4ea'; // green
-    } else if (pct >= 60) {
-      pctColor = '#e37400'; pctBg = '#fef7e0'; // amber
+    const key = name + '|' + roll + '|' + cls;   // <-- Changed to avoid backticks
+
+    if (!studentStats[key]) {
+      studentStats[key] = { name, roll, class: cls, total:0, present:0, absent:0, late:0, leave:0 };
     }
 
-    sheet.getRange(rowNum, 9)
-      .setFontColor(pctColor)
-      .setFontWeight('bold')
-      .setBackground(pctBg);
-
-    // Color-code Status columns: Present=green, Absent=red, Late=yellow, Leave=blue
-    sheet.getRange(rowNum, 5).setFontColor('#1e8e3e').setFontWeight('bold'); // Present
-    sheet.getRange(rowNum, 6).setFontColor('#e53935').setFontWeight('bold'); // Absent
-    sheet.getRange(rowNum, 7).setFontColor('#e37400').setFontWeight('bold'); // Late
-    sheet.getRange(rowNum, 8).setFontColor('#1a73e8').setFontWeight('bold'); // Leave
+    studentStats[key].total++;
+    if (status === 'present') studentStats[key].present++;
+    else if (status === 'absent') studentStats[key].absent++;
+    else if (status === 'late') studentStats[key].late++;
+    else if (status === 'leave') studentStats[key].leave++;
   });
 
-  // ── Column widths ───────────────────────────────────────────────
-  sheet.setColumnWidth(1, 190); // Student Name
-  sheet.setColumnWidth(2, 85);  // Roll No.
-  sheet.setColumnWidth(3, 100); // Class
-  sheet.setColumnWidth(4, 90);  // Total Days
-  sheet.setColumnWidth(5, 80);  // Present
-  sheet.setColumnWidth(6, 80);  // Absent
-  sheet.setColumnWidth(7, 70);  // Late
-  sheet.setColumnWidth(8, 70);  // Leave
-  sheet.setColumnWidth(9, 115); // Attendance %
+  const headers = ['Student Name', 'Roll No.', 'Class', 'Total Days', 'Present', 
+                  'Absent', 'Late', 'Leave', 'Attendance %'];
+  
+  sheet.getRange(4, 1, 1, headers.length).setValues([headers])
+    .setBackground('#4285f4').setFontColor('#ffffff').setFontWeight('bold');
 
-  // Freeze title + header rows
-  sheet.setFrozenRows(5);
+  const rows = Object.values(studentStats).map(s => {
+    const pct = s.total > 0 ? Math.round((s.present / s.total) * 100) : 0;
+    return [s.name, s.roll, s.class, s.total, s.present, s.absent, s.late, s.leave, pct + '%'];
+  });
+
+  rows.sort((a, b) => {
+    if (a[2] !== b[2]) return a[2].localeCompare(b[2]);
+    return a[0].localeCompare(b[0]);
+  });
+
+  if (rows.length > 0) {
+    sheet.getRange(5, 1, rows.length, headers.length).setValues(rows);
+  }
+
+  sheet.autoResizeColumns(1, headers.length);
+  sheet.setFrozenRows(4);
 }`;
 
 // ═══════════════════════════════════════════════════
@@ -1183,7 +973,7 @@ let adminUsers   = loadLocal(SK.users)    || DEFAULT_ADMINS;
 let nextId       = students.length ? Math.max(...students.map(s=>s.id)) + 1 : 1;
 let lastSyncTime = loadLocal(SK.lastSync) || null;
 // Hardcoded Google Sheet URL (Change this when needed)
-let gsheetUrl    = "https://script.google.com/macros/s/AKfycbzDGaccHyE_FztQgJQ-4JedXsISkHvg1Oo1dBm653eSBG0JR9ksBN6rp6rdS7xnUpukFA/exec";
+let gsheetUrl    = "https://script.google.com/macros/s/AKfycbxRihmLMltZr_eh0bE5m3yN5K58wglAjwhudrGKKp98BiJ8tuDYjNSVxKlO6MhKMzB7NA/exec";
 
 // Date-aware attendance — not just "today"
 let currentAttendDate = getTodayStr();
